@@ -133,99 +133,14 @@
       transform: scale(0.72);
     }
 
-    .breathing .aura {
-      animation: breatheAura 10s ease-in-out infinite;
-    }
-
-    .breathing .inner-glow {
-      animation: breatheGlow 10s ease-in-out infinite;
-    }
-
-    .breathing .bubble-one {
-      animation: breatheOne 10s ease-in-out infinite;
-    }
-
-    .breathing .bubble-two {
-      animation: breatheTwo 10s ease-in-out infinite;
-    }
-
+    .breathing .aura,
+    .breathing .inner-glow,
+    .breathing .bubble-one,
+    .breathing .bubble-two,
     .breathing .bubble-three {
-      animation: breatheThree 10s ease-in-out infinite;
-    }
-
-    @keyframes breatheAura {
-      0% {
-        transform: scale(0.72);
-        opacity: 0.38;
-      }
-      50% {
-        transform: scale(1.04);
-        opacity: 0.72;
-      }
-      100% {
-        transform: scale(0.74);
-        opacity: 0.46;
-      }
-    }
-
-    @keyframes breatheGlow {
-      0% {
-        transform: scale(0.74);
-        opacity: 0.54;
-      }
-      50% {
-        transform: scale(0.88);
-        opacity: 0.42;
-      }
-      100% {
-        transform: scale(0.7);
-        opacity: 0.8;
-      }
-    }
-
-    @keyframes breatheOne {
-      0% {
-        transform: translate(0, 0) scale(0.72);
-        opacity: 0.82;
-      }
-      50% {
-        transform: translate(-8%, -5%) scale(1.02);
-        opacity: 0.46;
-      }
-      100% {
-        transform: translate(0, 0) scale(0.72);
-        opacity: 0.82;
-      }
-    }
-
-    @keyframes breatheTwo {
-      0% {
-        transform: translate(0, 0) scale(0.72);
-        opacity: 0.78;
-      }
-      50% {
-        transform: translate(8%, -3%) scale(1.02);
-        opacity: 0.44;
-      }
-      100% {
-        transform: translate(0, 0) scale(0.72);
-        opacity: 0.78;
-      }
-    }
-
-    @keyframes breatheThree {
-      0% {
-        transform: translate(0, 0) scale(0.72);
-        opacity: 0.76;
-      }
-      50% {
-        transform: translate(0, 9%) scale(1.02);
-        opacity: 0.42;
-      }
-      100% {
-        transform: translate(0, 0) scale(0.72);
-        opacity: 0.76;
-      }
+      transition:
+        transform 90ms linear,
+        opacity 90ms linear;
     }
 
     .center-text {
@@ -236,8 +151,8 @@
     }
 
     .phase {
-      font-size: clamp(1.8rem, 8vw, 3.2rem);
-      font-weight: 200;
+      font-size: clamp(1.8rem, 6vw, 3.2rem);
+      font-weight: 250;
       letter-spacing: -0.045em;
       line-height: 1;
       opacity: 1;
@@ -390,7 +305,7 @@
   <main class="app" id="app">
     <header>
       <h1>Breathing Bubble</h1>
-      <p class="subtitle">5 seconds in · 5 seconds out · 5 minutes</p>
+      <p class="subtitle">5 sekunder in · 5 sekunder ut · 5 minuter</p>
     </header>
 
     <section class="stage" aria-live="polite">
@@ -402,7 +317,7 @@
         <div class="inner-glow"></div>
 
         <div class="center-text">
-          <div class="phase" id="phaseText">Ready</div>
+          <div class="phase" id="phaseText">Redo?</div>
           <div class="phase-count" id="phaseCount">5:00</div>
         </div>
       </div>
@@ -423,7 +338,7 @@
         <button class="secondary" id="resetBtn" aria-label="Reset">↺</button>
       </div>
 
-      <button class="sound-toggle" id="soundToggle" aria-pressed="true">Sound on</button>
+      <button class="sound-toggle" id="soundToggle" aria-pressed="true">Ljud på</button>
     </section>
   </main>
 
@@ -540,35 +455,88 @@
       return elapsedBeforeStart + (performance.now() - startedAt) / 1000;
     }
 
+    function easeInOut(t) {
+      return t < 0.5
+        ? 2 * t * t
+        : 1 - Math.pow(-2 * t + 2, 2) / 2;
+    }
+
+    function mix(from, to, amount) {
+      return from + (to - from) * amount;
+    }
+
+    function syncBubbleAnimation(cyclePosition) {
+      const phasePosition = cyclePosition % PHASE_SECONDS;
+      const rawProgress = phasePosition / PHASE_SECONDS;
+      const isInhale = cyclePosition < PHASE_SECONDS;
+
+      // Inhale goes 0 → 1, exhale goes 1 → 0.
+      // This means inhale only expands and exhale only contracts.
+      const breathAmount = easeInOut(isInhale ? rawProgress : 1 - rawProgress);
+
+      const smallScale = 0.72;
+      const largeScale = 1.30;
+      const focusedScale = mix(smallScale, largeScale, breathAmount);
+      const auraScale = mix(0.72, 1.30, breathAmount);
+      const glowScale = mix(0.64, 0.90, breathAmount);
+
+      const spreadX = mix(0, 10, breathAmount);
+      const spreadY = mix(0, 10, breathAmount);
+
+      const bubbleOne = document.querySelector('.bubble-one');
+      const bubbleTwo = document.querySelector('.bubble-two');
+      const bubbleThree = document.querySelector('.bubble-three');
+      const aura = document.querySelector('.aura');
+      const glow = document.querySelector('.inner-glow');
+
+      bubbleOne.style.transform = `translate(${-spreadX}%, ${mix(0, -6, breathAmount)}%) scale(${focusedScale})`;
+      bubbleTwo.style.transform = `translate(${spreadX}%, ${mix(0, -4, breathAmount)}%) scale(${focusedScale})`;
+      bubbleThree.style.transform = `translate(0%, ${spreadY}%) scale(${focusedScale})`;
+
+      bubbleOne.style.opacity = mix(0.86, 0.46, breathAmount);
+      bubbleTwo.style.opacity = mix(0.86, 0.44, breathAmount);
+      bubbleThree.style.opacity = mix(0.86, 0.42, breathAmount);
+
+      aura.style.transform = `scale(${auraScale})`;
+      aura.style.opacity = mix(0.42, 0.72, breathAmount);
+
+      glow.style.transform = `scale(${glowScale})`;
+      glow.style.opacity = mix(0.88, 0.38, breathAmount);
+    }
+
     function render() {
       const elapsed = Math.min(getElapsed(), SESSION_SECONDS);
       const remaining = SESSION_SECONDS - elapsed;
       const cyclePosition = elapsed % (PHASE_SECONDS * 2);
+
       const isInhale = cyclePosition < PHASE_SECONDS;
-      const currentPhase = isInhale ? 'inhale' : 'exhale';
+      const phaseKey = isInhale ? 'inhale' : 'exhale';
+      const label = isInhale ? 'Andas in' : 'Andas ut';
       const phaseRemaining = PHASE_SECONDS - (cyclePosition % PHASE_SECONDS);
+
+      syncBubbleAnimation(cyclePosition);
 
       timerText.textContent = formatTime(remaining);
       phaseCount.textContent = running || finished ? Math.ceil(phaseRemaining) : '5:00';
       progressFill.style.width = `${(elapsed / SESSION_SECONDS) * 100}%`;
 
       if (finished) {
-        setPhaseLabel('Done');
+        setPhaseLabel('Klart');
         phaseCount.textContent = 'Nice';
         return;
       }
 
       if (!running && elapsed === 0) {
-        setPhaseLabel('Ready');
+        setPhaseLabel('Redo?');
         phaseCount.textContent = '5:00';
         return;
       }
 
-      setPhaseLabel(isInhale ? 'Inhale' : 'Exhale');
+      setPhaseLabel(label);
 
-      if (running && currentPhase !== lastPhase) {
-        playBreathSound(currentPhase);
-        lastPhase = currentPhase;
+      if (running && phaseKey !== lastPhase) {
+        playBreathSound(phaseKey);
+        lastPhase = phaseKey;
       }
 
       if (running && elapsed >= SESSION_SECONDS) {
@@ -584,7 +552,7 @@
       if (finished) reset();
       running = true;
       startedAt = performance.now();
-      startPauseBtn.textContent = 'Pause';
+      startPauseBtn.textContent = 'Pausa';
       bubbleWrap.classList.add('breathing');
       app.classList.remove('done');
       cancelAnimationFrame(rafId);
@@ -595,8 +563,7 @@
       elapsedBeforeStart = getElapsed();
       running = false;
       startedAt = null;
-      startPauseBtn.textContent = 'Resume';
-      bubbleWrap.classList.remove('breathing');
+      startPauseBtn.textContent = 'Fortsätt';
       stopAllSounds();
       cancelAnimationFrame(rafId);
       render();
@@ -610,7 +577,9 @@
       lastPhase = null;
       stopAllSounds();
       startPauseBtn.textContent = 'Start';
+
       bubbleWrap.classList.remove('breathing');
+
       app.classList.remove('done');
       cancelAnimationFrame(rafId);
       render();
@@ -622,8 +591,10 @@
       elapsedBeforeStart = SESSION_SECONDS;
       startedAt = null;
       stopAllSounds();
-      startPauseBtn.textContent = 'Restart';
+      startPauseBtn.textContent = 'Starta om';
+
       bubbleWrap.classList.remove('breathing');
+
       app.classList.add('done');
       cancelAnimationFrame(rafId);
       render();
@@ -637,7 +608,7 @@
 
     soundToggle.addEventListener('click', () => {
       soundOn = !soundOn;
-      soundToggle.textContent = soundOn ? 'Sound on' : 'Sound off';
+      soundToggle.textContent = soundOn ? 'Ljud på' : 'Ljud av';
       soundToggle.setAttribute('aria-pressed', String(soundOn));
       if (soundOn) unlockAudio();
     });
