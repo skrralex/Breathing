@@ -93,7 +93,7 @@
     .aura {
       inset: 2%;
       background: var(--ring);
-      filter: blur(2px);
+      filter: blur(20px);
       transform: scale(0.72);
       opacity: 0.46;
     }
@@ -342,6 +342,9 @@
     </section>
   </main>
 
+  <audio id="inhaleAudio" src="inhale.mp3" preload="auto" playsinline></audio>
+  <audio id="exhaleAudio" src="exhale.mp3" preload="auto" playsinline></audio>
+
   <script>
     const SESSION_SECONDS = 5 * 60;
     const PHASE_SECONDS = 5;
@@ -355,6 +358,8 @@
     const startPauseBtn = document.getElementById('startPauseBtn');
     const resetBtn = document.getElementById('resetBtn');
     const soundToggle = document.getElementById('soundToggle');
+    const inhaleAudio = document.getElementById('inhaleAudio');
+    const exhaleAudio = document.getElementById('exhaleAudio');
 
     let running = false;
     let finished = false;
@@ -364,62 +369,113 @@
     let soundOn = true;
     let lastPhase = null;
 
-    const inhaleSound = new Audio('inhale.mp3');
-    const exhaleSound = new Audio('exhale.mp3');
+    const SOUND_VOLUME = 0.65;
 
-    inhaleSound.preload = 'auto';
-    exhaleSound.preload = 'auto';
-    inhaleSound.volume = 0.65;
-    exhaleSound.volume = 0.65;
+    inhaleAudio.volume = SOUND_VOLUME;
+    exhaleAudio.volume = SOUND_VOLUME;
 
-    const soundFiles = {
-      inhale: 'inhale.mp3',
-      exhale: 'exhale.mp3'
-    };
+    let audioContext = null;
+    let inhaleBuffer = null;
+    let exhaleBuffer = null;
+    let audioReady = false;
+    let audioLoading = false;
+    let useAudioFallback = false;
+    let activeSources = [];
 
-    let activeSounds = [];
+    async function unlockAudio() {
+      if (audioReady || audioLoading) return;
+      audioLoading = true;
 
-    function unlockAudio() {
-      // Mobile browsers usually allow audio only after a user tap.
-      // This silent play/pause primes the audio files after pressing Start.
-      [inhaleSound, exhaleSound].forEach((sound) => {
-        sound.muted = true;
-        sound.play()
-          .then(() => {
-            sound.pause();
-            sound.currentTime = 0;
-            sound.muted = false;
-          })
-          .catch(() => {
-            sound.muted = false;
-          });
-      });
+      try {
+        audioContext = audioContext || new (window.AudioContext || window.webkitAudioContext)();
+
+        if (audioContext.state === 'suspended') {
+          await audioContext.resume();
+        }
+
+        const [inhaleResponse, exhaleResponse] = await Promise.all([
+          fetch('inhale.mp3'),
+          fetch('exhale.mp3')
+        ]);
+
+        if (!inhaleResponse.ok || !exhaleResponse.ok) {
+          throw new Error('Could not load one or both audio files');
+        }
+
+        const [inhaleArrayBuffer, exhaleArrayBuffer] = await Promise.all([
+          inhaleResponse.arrayBuffer(),
+          exhaleResponse.arrayBuffer()
+        ]);
+
+        inhaleBuffer = await audioContext.decodeAudioData(inhaleArrayBuffer.slice(0));
+        exhaleBuffer = await audioContext.decodeAudioData(exhaleArrayBuffer.slice(0));
+
+        audioReady = true;
+        useAudioFallback = false;
+      } catch (error) {
+        // Fallback to normal audio elements if Web Audio loading fails.
+        useAudioFallback = true;
+        inhaleAudio.load();
+        exhaleAudio.load();
+      } finally {
+        audioLoading = false;
+      }
     }
 
     function playBreathSound(type) {
       if (!soundOn) return;
 
-      const sound = new Audio(soundFiles[type]);
-      sound.volume = 0.65;
+      if (audioReady && audioContext) {
+        if (audioContext.state === 'suspended') {
+          audioContext.resume();
+        }
 
-      activeSounds.push(sound);
+        const buffer = type === 'inhale' ? inhaleBuffer : exhaleBuffer;
+        if (!buffer) return;
 
-      sound.addEventListener('ended', () => {
-        activeSounds = activeSounds.filter((item) => item !== sound);
-      });
+        const source = audioContext.createBufferSource();
+        const gain = audioContext.createGain();
 
-      sound.play().catch(() => {
-        activeSounds = activeSounds.filter((item) => item !== sound);
-        // If the browser blocks playback, tapping Start again usually unlocks it.
-      });
+        source.buffer = buffer;
+        gain.gain.value = SOUND_VOLUME;
+
+        source.connect(gain);
+        gain.connect(audioContext.destination);
+
+        activeSources.push(source);
+        source.onended = () => {
+          activeSources = activeSources.filter((item) => item !== source);
+        };
+
+        source.start(0);
+        return;
+      }
+
+      if (useAudioFallback) {
+        const audio = type === 'inhale' ? inhaleAudio : exhaleAudio;
+        audio.pause();
+        audio.currentTime = 0;
+        audio.volume = SOUND_VOLUME;
+        audio.play().catch(() => {
+          // If playback is blocked, the visuals still continue.
+        });
+      }
     }
 
     function stopAllSounds() {
-      activeSounds.forEach((sound) => {
-        sound.pause();
-        sound.currentTime = 0;
+      activeSources.forEach((source) => {
+        try {
+          source.stop(0);
+        } catch (error) {
+          // The source may already have stopped.
+        }
       });
-      activeSounds = [];
+      activeSources = [];
+
+      [inhaleAudio, exhaleAudio].forEach((audio) => {
+        audio.pause();
+        audio.currentTime = 0;
+      });
     }
 
     function setPhaseLabel(nextText) {
@@ -547,11 +603,12 @@
       if (running) rafId = requestAnimationFrame(render);
     }
 
-    function start() {
-      unlockAudio();
+    async function start() {
+      await unlockAudio();
       if (finished) reset();
       running = true;
       startedAt = performance.now();
+      lastPhase = null;
       startPauseBtn.textContent = 'Pausa';
       bubbleWrap.classList.add('breathing');
       app.classList.remove('done');
@@ -610,6 +667,7 @@
       soundOn = !soundOn;
       soundToggle.textContent = soundOn ? 'Ljud på' : 'Ljud av';
       soundToggle.setAttribute('aria-pressed', String(soundOn));
+      if (!soundOn) stopAllSounds();
       if (soundOn) unlockAudio();
     });
 
