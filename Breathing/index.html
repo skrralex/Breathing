@@ -386,26 +386,20 @@
     let useAudioFallback = false;
     let activeSources = [];
 
-
     let silentOscillator = null;
 
     function startSilentLoop() {
       if (!audioContext) return;
-      
-      // Clean up any existing oscillator
       stopSilentLoop();
       
-      // Create an oscillator tone
       silentOscillator = audioContext.createOscillator();
       const gain = audioContext.createGain();
       
-      // Mute it completely
+      // Mute it almost completely to prevent the 2-minute sleep
       gain.gain.value = 0.00001;
       
       silentOscillator.connect(gain);
       gain.connect(audioContext.destination);
-      
-      // Start playing the silent tone immediately
       silentOscillator.start();
     }
 
@@ -419,12 +413,52 @@
       }
     }
 
+    // Safely decodes audio data for older/strict iOS Safari versions
+    function safeDecodeAudio(audioData) {
+      return new Promise((resolve, reject) => {
+        try {
+          const promise = audioContext.decodeAudioData(
+            audioData,
+            (decoded) => resolve(decoded),
+            (err) => reject(err)
+          );
+          // If the browser does return a promise, catch any errors
+          if (promise && typeof promise.catch === 'function') {
+            promise.catch(reject);
+          }
+        } catch (e) {
+          reject(e);
+        }
+      });
+    }
+
+    function ensureAudioContextSync() {
+      if (!audioContext) {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (audioContext.state === 'suspended') {
+        audioContext.resume();
+      }
+
+      // iOS Web Audio API Unlock: play 1 frame of empty sound instantly
+      const emptyBuffer = audioContext.createBuffer(1, 1, 22050);
+      const unlockSource = audioContext.createBufferSource();
+      unlockSource.buffer = emptyBuffer;
+      unlockSource.connect(audioContext.destination);
+      unlockSource.start(0);
+
+      // iOS HTML5 Audio Unlock: instantly play and pause the fallbacks
+      inhaleAudio.play().then(() => inhaleAudio.pause()).catch(() => {});
+      exhaleAudio.play().then(() => exhaleAudio.pause()).catch(() => {});
+
+      if (soundOn) startSilentLoop();
+    }
+
     async function unlockAudio() {
       if (audioReady || audioLoading) return;
       audioLoading = true;
 
       try {
-        // We removed the context creation from here because it's now handled synchronously
         const [inhaleResponse, exhaleResponse] = await Promise.all([
           fetch('inhale.mp3'),
           fetch('exhale.mp3')
@@ -437,8 +471,9 @@
           exhaleResponse.arrayBuffer()
         ]);
 
-        inhaleBuffer = await audioContext.decodeAudioData(inhaleArrayBuffer);
-        exhaleBuffer = await audioContext.decodeAudioData(exhaleArrayBuffer);
+        // Use the safe decoder wrapper
+        inhaleBuffer = await safeDecodeAudio(inhaleArrayBuffer);
+        exhaleBuffer = await safeDecodeAudio(exhaleArrayBuffer);
 
         audioReady = true;
         useAudioFallback = false;
@@ -450,7 +485,6 @@
         audioLoading = false;
       }
     }
-
 
     function playBreathSound(type) {
       if (!soundOn) return;
@@ -481,37 +515,20 @@
         return;
       }
 
-      
-
       if (useAudioFallback) {
         const audio = type === 'inhale' ? inhaleAudio : exhaleAudio;
         audio.pause();
         audio.currentTime = 0;
         audio.volume = SOUND_VOLUME;
-        audio.play().catch(() => {
-          // If playback is blocked, the visuals still continue.
-        });
+        audio.play().catch(() => {});
       }
-    }
-
-    function ensureAudioContextSync() {
-      if (!audioContext) {
-        audioContext = new (window.AudioContext || window.webkitAudioContext)();
-      }
-      if (audioContext.state === 'suspended') {
-        audioContext.resume();
-      }
-      // Start the dummy sound instantly on tap
-      if (soundOn) startSilentLoop();
     }
 
     function stopAllSounds() {
       activeSources.forEach((source) => {
         try {
           source.stop(0);
-        } catch (error) {
-          // The source may already have stopped.
-        }
+        } catch (error) {}
       });
       activeSources = [];
 
@@ -569,8 +586,6 @@
       const rawProgress = phasePosition / PHASE_SECONDS;
       const isInhale = cyclePosition < PHASE_SECONDS;
 
-      // Inhale goes 0 → 1, exhale goes 1 → 0.
-      // This means inhale only expands and exhale only contracts.
       const breathAmount = easeInOut(isInhale ? rawProgress : 1 - rawProgress);
 
       const smallScale = 0.72;
@@ -647,7 +662,7 @@
     }
 
     async function start() {
-      await unlockAudio(); // Now this only fetches the files
+      await unlockAudio();
       if (finished) reset();
       
       running = true;
@@ -707,13 +722,15 @@
       if (running) {
         pause();
       } else {
-        // Start the audio engine SYNCHRONOUSLY before doing any async loading
         ensureAudioContextSync();
         start();
       }
     });
 
-    resetBtn.addEventListener('click', reset);
+    resetBtn.addEventListener('click', () => {
+      reset();
+      stopSilentLoop();
+    });
 
     soundToggle.addEventListener('click', () => {
       soundOn = !soundOn;
@@ -724,7 +741,6 @@
         stopAllSounds();
         stopSilentLoop();
       } else {
-        // Sync start the engine if they turn sound back on
         ensureAudioContextSync();
         unlockAudio(); 
       }
