@@ -71,6 +71,12 @@
       color: var(--muted);
     }
 
+    .subtitle2 {
+      margin: 8px 0 0;
+      font-size: 0.76rem;
+      color: var(--muted);
+    }
+
     .stage {
       position: relative;
       display: grid;
@@ -310,7 +316,9 @@
     <header>
       <h1>Andrum</h1>
       <p class="subtitle">5 sekunder in · 5 sekunder ut · 5 minuter</p>
-      <p class="subtitle">Ljudlöst läge på iPhone kan påverka ljudet.</p>
+      <p class="subtitle2">Ljudlöst läge på iPhone kan påverka ljudet.</p>
+      <p class="subtitle2">Använd hörlurar för bästa resultat.</p>
+
     </header>
 
     <section class="stage" aria-live="polite">
@@ -343,7 +351,7 @@
         <button class="secondary" id="resetBtn" aria-label="Reset">↺</button>
       </div>
 
-      <button class="sound-toggle" id="soundToggle" aria-pressed="true">Ljud på</button>
+      <!-- <button class="sound-toggle" id="soundToggle" aria-pressed="true">Ljud på</button> -->
     </section>
   </main>
 
